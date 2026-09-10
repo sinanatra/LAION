@@ -45,11 +45,24 @@
     sortItems(filterItems(items, { query, scoreMode, minScore, maxScore })),
   );
 
+  let visibleCount = $state(1);
+  $effect(() => {
+    filtered;
+    visibleCount = 1;
+  });
+  let visible = $derived(filtered.slice(0, visibleCount));
+
+  function revealNext() {
+    if (visibleCount < filtered.length) visibleCount += 1;
+  }
+
   function pickRandom() {
     if (filtered.length === 0) return;
-    const pick = filtered[Math.floor(Math.random() * filtered.length)];
+    const index = Math.floor(Math.random() * filtered.length);
+    const pick = filtered[index];
     highlightedId = pick.id;
     selectedItem = pick;
+    if (visibleCount <= index) visibleCount = index + 1;
     requestAnimationFrame(() => {
       document
         .getElementById(`item-${pick.id}`)
@@ -75,7 +88,7 @@
     <div>
       {#if !loadError}
         <div class="grid grid-cols-[repeat(auto-fill,minmax(30px,1fr))]">
-          {#each filtered as item (item.id)}
+          {#each visible as item (item.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <img
@@ -83,11 +96,12 @@
               src={`${import.meta.env.BASE_URL}data/images/${item.filename}`}
               alt=""
               title={item.caption}
-              loading="lazy"
               onclick={() => (selectedItem = item)}
+              onload={revealNext}
               onerror={(e) => {
                 if (e.currentTarget instanceof HTMLElement)
                   e.currentTarget.style.display = "none";
+                revealNext();
               }}
               class="aspect-square w-full cursor-pointer object-cover {highlightedId ===
               item.id

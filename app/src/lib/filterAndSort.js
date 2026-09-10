@@ -16,7 +16,7 @@ export function filterItems(
   });
 }
 
-const UNSAFE_BLUR_THRESHOLD = 0.1;
+const UNSAFE_BLUR_THRESHOLD = 0.05;
 
 export function isFlaggedUnsafe(item) {
   return item.punsafe !== undefined && item.punsafe > UNSAFE_BLUR_THRESHOLD;

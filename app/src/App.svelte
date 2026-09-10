@@ -45,15 +45,23 @@
     sortItems(filterItems(items, { query, scoreMode, minScore, maxScore })),
   );
 
-  let visibleCount = $state(1);
+  const BATCH_SIZE = 30;
+  let visibleCount = $state(0);
+  let pendingInBatch = $state(0);
   $effect(() => {
     filtered;
-    visibleCount = 1;
+    visibleCount = Math.min(BATCH_SIZE, filtered.length);
+    pendingInBatch = visibleCount;
   });
   let visible = $derived(filtered.slice(0, visibleCount));
 
-  function revealNext() {
-    if (visibleCount < filtered.length) visibleCount += 1;
+  function onImageSettled() {
+    pendingInBatch = Math.max(0, pendingInBatch - 1);
+    if (pendingInBatch === 0 && visibleCount < filtered.length) {
+      const next = Math.min(visibleCount + BATCH_SIZE, filtered.length);
+      pendingInBatch = next - visibleCount;
+      visibleCount = next;
+    }
   }
 
   function pickRandom() {
@@ -62,7 +70,11 @@
     const pick = filtered[index];
     highlightedId = pick.id;
     selectedItem = pick;
-    if (visibleCount <= index) visibleCount = index + 1;
+    if (visibleCount <= index) {
+      const newlyRevealed = index + 1 - visibleCount;
+      visibleCount = index + 1;
+      pendingInBatch += newlyRevealed;
+    }
     requestAnimationFrame(() => {
       document
         .getElementById(`item-${pick.id}`)
@@ -97,11 +109,11 @@
               alt=""
               title={item.caption}
               onclick={() => (selectedItem = item)}
-              onload={revealNext}
+              onload={onImageSettled}
               onerror={(e) => {
                 if (e.currentTarget instanceof HTMLElement)
                   e.currentTarget.style.display = "none";
-                revealNext();
+                onImageSettled();
               }}
               class="aspect-square w-full cursor-pointer object-cover {highlightedId ===
               item.id

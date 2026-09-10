@@ -1,11 +1,25 @@
-export function filterItems(items, { query }) {
+export function filterItems(
+  items,
+  { query, scoreMode = "unsafe", minScore = 0, maxScore = 1 },
+) {
   const q = query.trim().toLowerCase();
-  if (!q) return items;
-  return items.filter(
-    (item) =>
+  const field = scoreMode === "watermark" ? "pwatermark" : "punsafe";
+  return items.filter((item) => {
+    const matchesQuery =
+      !q ||
       item.caption.toLowerCase().includes(q) ||
-      item.source_url.toLowerCase().includes(q),
-  );
+      item.source_url.toLowerCase().includes(q);
+    const withinScore =
+      item[field] === undefined ||
+      (item[field] >= minScore && item[field] <= maxScore);
+    return matchesQuery && withinScore;
+  });
+}
+
+const UNSAFE_BLUR_THRESHOLD = 0.1;
+
+export function isFlaggedUnsafe(item) {
+  return item.punsafe !== undefined && item.punsafe > UNSAFE_BLUR_THRESHOLD;
 }
 
 // Orders items by UMAP x/y in a snake/raster pattern (banded by y, alternating

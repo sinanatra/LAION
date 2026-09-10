@@ -3,7 +3,11 @@
   import DetailPanel from "./lib/DetailPanel.svelte";
   import SearchControls from "./lib/SearchControls.svelte";
   import InfoText from "./lib/InfoText.svelte";
-  import { filterItems, sortItems } from "./lib/filterAndSort.js";
+  import {
+    filterItems,
+    isFlaggedUnsafe,
+    sortItems,
+  } from "./lib/filterAndSort.js";
 
   // laion/relaion2B-en-research-safe row count, via the HF datasets-server
   // /size endpoint (checked 2026-09).
@@ -12,6 +16,10 @@
   let items = $state([]);
   let loadError = $state(null);
   let query = $state("");
+  let scoreMode = $state("unsafe");
+  let minScore = $state(0);
+  let maxScore = $state(1);
+  let blurUnsafe = $state(true);
   let selectedItem = $state(null);
   let highlightedId = $state(null);
 
@@ -33,7 +41,9 @@
     }).format(value);
   });
 
-  let filtered = $derived(sortItems(filterItems(items, { query })));
+  let filtered = $derived(
+    sortItems(filterItems(items, { query, scoreMode, minScore, maxScore })),
+  );
 
   function pickRandom() {
     if (filtered.length === 0) return;
@@ -56,7 +66,9 @@
   </menu>
 </header>
 
-<article class="flex w-full flex-col md:h-[calc(100vh-30px)] md:flex-row">
+<article
+  class="flex w-full flex-col-reverse md:h-[calc(100vh-30px)] md:flex-row"
+>
   <div
     class="w-full overflow-y-auto bg-(--background-color) text-(--text-color) md:block md:h-full md:flex-1"
   >
@@ -80,6 +92,8 @@
               class="aspect-square w-full cursor-pointer object-cover {highlightedId ===
               item.id
                 ? 'outline-2 outline-(--text-color)'
+                : ''} {blurUnsafe && isFlaggedUnsafe(item)
+                ? 'blur-sm hover:blur-none'
                 : ''}"
             />
           {/each}
@@ -92,12 +106,12 @@
   </div>
 
   <div
-    class="w-full shrink-0 overflow-y-auto bg-(--fade-color) text-(--background-color) md:h-full md:w-64"
+    class="w-full shrink-0 overflow-y-auto bg-(--fade-color) py-2 text-(--background-color) md:h-full md:w-64"
   >
     {#if selectedItem}
       <DetailPanel item={selectedItem} onClose={() => (selectedItem = null)} />
     {/if}
-    <div class="px-2 py-1">
+    <div class="px-2">
       {#if loadError}
         <p>
           Could not load data/metadata.json ({loadError}). Run the notebook
@@ -106,6 +120,10 @@
       {:else}
         <SearchControls
           bind:query
+          bind:scoreMode
+          bind:minScore
+          bind:maxScore
+          bind:blurUnsafe
           onRandom={pickRandom}
           filteredCount={filtered.length}
           totalCount={items.length}

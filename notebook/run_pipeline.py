@@ -132,6 +132,12 @@ def run_download():
         }
         if row.get("similarity") is not None:
             entry["similarity"] = row["similarity"]
+        if row.get("punsafe") is not None:
+            entry["punsafe"] = row["punsafe"]
+        if row.get("pwatermark") is not None:
+            entry["pwatermark"] = row["pwatermark"]
+        if row.get("exif") and row["exif"] not in ("{}", "null"):
+            entry["exif"] = row["exif"]
         batch.append(entry)
         seen_urls.add(url)
 

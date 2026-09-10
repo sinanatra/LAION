@@ -47,7 +47,7 @@
     sortItems(filterItems(items, { query, scoreMode, minScore, maxScore })),
   );
 
-  const BATCH_SIZE = 30;
+  const BATCH_SIZE = 50;
   let visibleCount = $state(0);
   let pendingInBatch = $state(0);
   $effect(() => {

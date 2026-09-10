@@ -1,0 +1,7 @@
+torch==2.5.1
+open_clip_torch==2.29.0
+numpy==1.26.4
+
+# only needed for the UMAP example cell, not for computing embeddings.npy itself
+umap-learn==0.5.7
+matplotlib==3.9.3

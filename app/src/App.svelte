@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
   import SearchControls from "./lib/SearchControls.svelte";
   import InfoText from "./lib/InfoText.svelte";
@@ -49,9 +49,17 @@
   let visibleCount = $state(0);
   let pendingInBatch = $state(0);
   $effect(() => {
-    filtered;
-    visibleCount = Math.min(BATCH_SIZE, filtered.length);
-    pendingInBatch = visibleCount;
+    items.length;
+    query;
+    scoreMode;
+    minScore;
+    maxScore;
+    const count = Math.min(
+      BATCH_SIZE,
+      untrack(() => filtered.length),
+    );
+    visibleCount = count;
+    pendingInBatch = count;
   });
   let visible = $derived(filtered.slice(0, visibleCount));
 
@@ -81,6 +89,11 @@
         ?.scrollIntoView({ behavior: "smooth", block: "center" });
     });
   }
+
+  console.log(
+    "%cHi there :) What are you doing here? Peeping around are you? the code is here: https://github.com/sinanatra",
+    "color: #ff69b4; font-weight: bold; font-size: 14px;",
+  );
 </script>
 
 <header class="block h-7.5 w-full">

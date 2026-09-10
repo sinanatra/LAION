@@ -31,14 +31,15 @@
   />
 </div>
 <button
-  class="bg-black text-white p-1 pointer my-2 block"
+  class="bg-black text-white p-1 cursor-pointer disabled:cursor-not-allowed my-2 block"
   onclick={onRandom}
   disabled={filteredCount === 0}>random</button
 >
 
 <div class="mt-4">
-  <label>
+  <label class="cursor-pointer">
     <input
+      class="cursor-pointer"
       type="radio"
       name="score-mode"
       value="unsafe"
@@ -46,8 +47,9 @@
     />
     unsafe
   </label>
-  <label class="ml-2">
+  <label class="ml-2 cursor-pointer">
     <input
+      class="cursor-pointer"
       type="radio"
       name="score-mode"
       value="watermark"
@@ -62,10 +64,10 @@
     )}%
   </p>
 
-  <label for="min-score" class="mt-1 block text-sm">min</label>
+  <label for="min-score" class="mt-1 block text-sm cursor-pointer">min</label>
   <input
     id="min-score"
-    class="block w-full"
+    class="block w-full cursor-pointer"
     type="range"
     min="0"
     max="1"
@@ -74,10 +76,10 @@
     oninput={(e) => setMin(Number(e.currentTarget.value))}
   />
 
-  <label for="max-score" class="mt-1 block text-sm">max</label>
+  <label for="max-score" class="mt-1 block text-sm cursor-pointer">max</label>
   <input
     id="max-score"
-    class="block w-full"
+    class="block w-full cursor-pointer"
     type="range"
     min="0"
     max="1"
@@ -86,8 +88,8 @@
     oninput={(e) => setMax(Number(e.currentTarget.value))}
   />
 
-  <label class="mt-2 block">
-    <input type="checkbox" bind:checked={blurUnsafe} />
+  <label class="mt-2 block cursor-pointer">
+    <input class="cursor-pointer" type="checkbox" bind:checked={blurUnsafe} />
     blur unsafe images
   </label>
 </div>

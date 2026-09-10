@@ -17,7 +17,7 @@
   class="w-full border-b bg-(--fade-color) mb-10 p-2 text-base text-(--background-color)"
 >
   <button
-    class="bg-black text-white px-1 pointer mb-2 block"
+    class="bg-black text-white px-1 cursor-pointer mb-2 block"
     onclick={onClose}
     aria-label="Close">close</button
   >

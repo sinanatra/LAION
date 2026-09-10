@@ -9,7 +9,7 @@
     >close</button
   >
   <img
-    src={`/data/images/${item.filename}`}
+    src={`${import.meta.env.BASE_URL}data/images/${item.filename}`}
     alt={item.caption}
     class="block w-full"
   />

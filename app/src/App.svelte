@@ -15,7 +15,7 @@
 
   onMount(async () => {
     try {
-      const res = await fetch("/data/metadata.json");
+      const res = await fetch(`${import.meta.env.BASE_URL}data/metadata.json`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       items = await res.json();
     } catch (err) {
@@ -121,7 +121,7 @@
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <img
               id={`item-${item.id}`}
-              src={`/data/images/${item.filename}`}
+              src={`${import.meta.env.BASE_URL}data/images/${item.filename}`}
               alt={item.caption}
               title={item.caption}
               loading="lazy"

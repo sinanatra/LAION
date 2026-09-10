@@ -1,5 +1,6 @@
 <script>
   import { onMount, untrack } from "svelte";
+  import { SvelteSet } from "svelte/reactivity";
   import DetailPanel from "./lib/DetailPanel.svelte";
   import SearchControls from "./lib/SearchControls.svelte";
   import InfoText from "./lib/InfoText.svelte";
@@ -49,29 +50,32 @@
 
   const BATCH_SIZE = 50;
   let visibleCount = $state(0);
-  let pendingInBatch = $state(0);
+  let loadedIds = new SvelteSet();
+
   $effect(() => {
     items.length;
     query;
     scoreMode;
     minScore;
     maxScore;
-    const count = Math.min(
-      BATCH_SIZE,
-      untrack(() => filtered.length),
-    );
-    visibleCount = count;
-    pendingInBatch = count;
+    visibleCount = Math.min(BATCH_SIZE, untrack(() => filtered.length));
   });
+
   let visible = $derived(filtered.slice(0, visibleCount));
 
-  function onImageSettled() {
-    pendingInBatch = Math.max(0, pendingInBatch - 1);
-    if (pendingInBatch === 0 && visibleCount < filtered.length) {
-      const next = Math.min(visibleCount + BATCH_SIZE, filtered.length);
-      pendingInBatch = next - visibleCount;
-      visibleCount = next;
+  $effect(() => {
+    const batch = visible;
+    if (
+      batch.length > 0 &&
+      visibleCount < filtered.length &&
+      batch.every((item) => loadedIds.has(item.id))
+    ) {
+      visibleCount = Math.min(visibleCount + BATCH_SIZE, filtered.length);
     }
+  });
+
+  function onImageSettled(id) {
+    loadedIds.add(id);
   }
 
   function pickRandom() {
@@ -81,9 +85,7 @@
     highlightedId = pick.id;
     selectedItem = pick;
     if (visibleCount <= index) {
-      const newlyRevealed = index + 1 - visibleCount;
       visibleCount = index + 1;
-      pendingInBatch += newlyRevealed;
     }
     requestAnimationFrame(() => {
       document
@@ -124,11 +126,11 @@
               alt=""
               title={item.caption}
               onclick={() => (selectedItem = item)}
-              onload={onImageSettled}
+              onload={() => onImageSettled(item.id)}
               onerror={(e) => {
                 if (e.currentTarget instanceof HTMLElement)
                   e.currentTarget.style.display = "none";
-                onImageSettled();
+                onImageSettled(item.id);
               }}
               class="aspect-square w-full cursor-pointer object-cover {highlightedId ===
               item.id

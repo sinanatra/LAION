@@ -162,41 +162,57 @@ def run_download():
     print(f"\nDownload done. Scanned up to row {i:,}, sampled {candidates_seen} candidates this run, saved {final_count} images total, {failed_downloads} failed downloads, {duplicate_skips} duplicate URLs skipped this run.")
 
 
-def run_embeddings_and_umap():
+def run_embeddings_and_umap(umap_only=False):
     # Imported here, in this dedicated subprocess, so torch is never in the
     # same process as the streaming download above.
     import numpy as np
-    import open_clip
-    import torch
     import umap
-
-    torch.multiprocessing.set_sharing_strategy("file_system")
 
     metadata = json.loads(METADATA_PATH.read_text())
 
-    model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
-    model.eval()
-
-    embeddings = np.zeros((len(metadata), 512), dtype=np.float32)
-    batch_size = 32
-
-    with torch.no_grad():
-        for batch_start in range(0, len(metadata), batch_size):
-            batch = metadata[batch_start : batch_start + batch_size]
-            images = torch.stack(
-                [preprocess(Image.open(IMAGES_DIR / entry["filename"])) for entry in batch]
+    embeddings = None
+    if umap_only and EMBEDDINGS_PATH.exists():
+        cached = np.load(EMBEDDINGS_PATH)
+        if cached.shape[0] == len(metadata):
+            embeddings = cached
+            print(f"Reusing cached embeddings {embeddings.shape} from {EMBEDDINGS_PATH}")
+        else:
+            print(
+                f"Cached embeddings ({cached.shape[0]}) don't match metadata "
+                f"({len(metadata)}) — re-encoding."
             )
-            batch_embeddings = model.encode_image(images)
-            batch_embeddings = batch_embeddings / batch_embeddings.norm(dim=-1, keepdim=True)
-            embeddings[batch_start : batch_start + len(batch)] = batch_embeddings.numpy()
 
-            if batch_start % (batch_size * 10) == 0:
-                print(f"Embedded {batch_start + len(batch)}/{len(metadata)} images...")
+    if embeddings is None:
+        import open_clip
+        import torch
 
-    np.save(EMBEDDINGS_PATH, embeddings)
-    print(f"Saved {embeddings.shape} embeddings to {EMBEDDINGS_PATH}")
+        torch.multiprocessing.set_sharing_strategy("file_system")
 
-    reducer = umap.UMAP(n_neighbors=15, min_dist=0.1, metric="cosine")
+        model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
+        model.eval()
+
+        embeddings = np.zeros((len(metadata), 512), dtype=np.float32)
+        batch_size = 32
+
+        with torch.no_grad():
+            for batch_start in range(0, len(metadata), batch_size):
+                batch = metadata[batch_start : batch_start + batch_size]
+                images = torch.stack(
+                    [preprocess(Image.open(IMAGES_DIR / entry["filename"])) for entry in batch]
+                )
+                batch_embeddings = model.encode_image(images)
+                batch_embeddings = batch_embeddings / batch_embeddings.norm(dim=-1, keepdim=True)
+                embeddings[batch_start : batch_start + len(batch)] = batch_embeddings.numpy()
+
+                if batch_start % (batch_size * 10) == 0:
+                    print(f"Embedded {batch_start + len(batch)}/{len(metadata)} images...")
+
+        np.save(EMBEDDINGS_PATH, embeddings)
+        print(f"Saved {embeddings.shape} embeddings to {EMBEDDINGS_PATH}")
+
+    # n_neighbors=30 (up from 15) favors more global structure over tiny
+    # local clusters, which reads better across ~5k points.
+    reducer = umap.UMAP(n_neighbors=30, min_dist=0.1, metric="cosine")
     coords_2d = reducer.fit_transform(embeddings)
 
     mins = coords_2d.min(axis=0)
@@ -219,7 +235,20 @@ def main():
         action="store_true",
         help="Only download images; skip the embeddings/UMAP step.",
     )
+    parser.add_argument(
+        "--umap-only",
+        action="store_true",
+        help=(
+            "Skip download AND re-encoding — reuse embeddings.npy (if it "
+            "matches metadata.json) and just rerun UMAP. Fast way to "
+            "retune UMAP parameters."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.umap_only:
+        run_embeddings_and_umap(umap_only=True)
+        return
 
     load_dotenv()
     login(token=os.environ["HF_TOKEN"])

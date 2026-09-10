@@ -33,9 +33,11 @@
     }
   });
 
+  // Ticks up live as batches reveal, instead of jumping straight to the
+  // final value once metadata.json loads — a small "loading" flourish.
   let percentOfDataset = $derived.by(() => {
-    if (items.length === 0) return "0";
-    const value = (items.length / TOTAL_DATASET_SIZE) * 100;
+    if (visibleCount === 0) return "0";
+    const value = (visibleCount / TOTAL_DATASET_SIZE) * 100;
     return new Intl.NumberFormat(undefined, {
       maximumSignificantDigits: 2,
     }).format(value);

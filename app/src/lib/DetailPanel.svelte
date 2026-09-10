@@ -4,7 +4,7 @@
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && onClose()} />
 
-<aside class="relative h-full w-full text-xs">
+<aside class="relative h-full w-full text-base">
   <button class="absolute top-1 right-1" onclick={onClose} aria-label="Close"
     >close</button
   >

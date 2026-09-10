@@ -21,7 +21,6 @@
   }
 </script>
 
-<div class="p-2">
   <div class="mb-2 text-black">
     <p class="mt-1">{filteredCount} of {totalCount}</p>
     <input
@@ -92,4 +91,4 @@
       blur unsafe images
     </label>
   </div>
-</div>
+

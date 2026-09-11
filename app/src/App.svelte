@@ -1,6 +1,5 @@
 <script>
-  import { onMount, untrack } from "svelte";
-  import { SvelteSet } from "svelte/reactivity";
+  import { onMount } from "svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
   import SearchControls from "./lib/SearchControls.svelte";
   import InfoText from "./lib/InfoText.svelte";
@@ -34,11 +33,9 @@
     }
   });
 
-  // Ticks up live as batches reveal, instead of jumping straight to the
-  // final value once metadata.json loads — a small "loading" flourish.
   let percentOfDataset = $derived.by(() => {
-    if (visibleCount === 0) return "0";
-    const value = (visibleCount / TOTAL_DATASET_SIZE) * 100;
+    if (items.length === 0) return "0";
+    const value = (items.length / TOTAL_DATASET_SIZE) * 100;
     return new Intl.NumberFormat(undefined, {
       maximumSignificantDigits: 2,
     }).format(value);
@@ -48,45 +45,12 @@
     sortItems(filterItems(items, { query, scoreMode, minScore, maxScore })),
   );
 
-  const BATCH_SIZE = 50;
-  let visibleCount = $state(0);
-  let loadedIds = new SvelteSet();
-
-  $effect(() => {
-    items.length;
-    query;
-    scoreMode;
-    minScore;
-    maxScore;
-    visibleCount = Math.min(BATCH_SIZE, untrack(() => filtered.length));
-  });
-
-  let visible = $derived(filtered.slice(0, visibleCount));
-
-  $effect(() => {
-    const batch = visible;
-    if (
-      batch.length > 0 &&
-      visibleCount < filtered.length &&
-      batch.every((item) => loadedIds.has(item.id))
-    ) {
-      visibleCount = Math.min(visibleCount + BATCH_SIZE, filtered.length);
-    }
-  });
-
-  function onImageSettled(id) {
-    loadedIds.add(id);
-  }
-
   function pickRandom() {
     if (filtered.length === 0) return;
     const index = Math.floor(Math.random() * filtered.length);
     const pick = filtered[index];
     highlightedId = pick.id;
     selectedItem = pick;
-    if (visibleCount <= index) {
-      visibleCount = index + 1;
-    }
     requestAnimationFrame(() => {
       document
         .getElementById(`item-${pick.id}`)
@@ -117,7 +81,7 @@
     <div>
       {#if !loadError}
         <div class="grid grid-cols-[repeat(auto-fill,minmax(30px,1fr))]">
-          {#each visible as item (item.id)}
+          {#each filtered as item (item.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
             <img
@@ -125,12 +89,12 @@
               src={`${import.meta.env.BASE_URL}data/images/${item.filename}`}
               alt=""
               title={item.caption}
+              loading="lazy"
+              style={item.color ? `background-color: ${item.color}` : ""}
               onclick={() => (selectedItem = item)}
-              onload={() => onImageSettled(item.id)}
               onerror={(e) => {
                 if (e.currentTarget instanceof HTMLElement)
                   e.currentTarget.style.display = "none";
-                onImageSettled(item.id);
               }}
               class="aspect-square w-full cursor-pointer object-cover {highlightedId ===
               item.id

@@ -12,6 +12,8 @@ this sidesteps that entirely.
 Usage:
     python run_pipeline.py                    # download, embed, and project
     python run_pipeline.py --skip-embeddings   # download only
+    python run_pipeline.py --umap-only         # retune UMAP without re-encoding
+    python run_pipeline.py --backfill-colors   # fill in missing avg-color placeholders
 
 Edit the parameters below to change the sample size, stride, or image
 dimensions.
@@ -54,6 +56,11 @@ def resize_to_fit(image, max_dimension):
         return image
     new_size = (round(width * scale), round(height * scale))
     return image.resize(new_size, Image.LANCZOS)
+
+
+def average_color_hex(image):
+    r, g, b = image.resize((1, 1), Image.LANCZOS).getpixel((0, 0))
+    return f"#{r:02x}{g:02x}{b:02x}"
 
 
 def load_metadata():
@@ -129,6 +136,7 @@ def run_download():
             "filename": filename,
             "caption": caption,
             "source_url": url,
+            "color": average_color_hex(image),
         }
         if row.get("similarity") is not None:
             entry["similarity"] = row["similarity"]
@@ -160,6 +168,22 @@ def run_download():
 
     final_count = len(load_metadata())
     print(f"\nDownload done. Scanned up to row {i:,}, sampled {candidates_seen} candidates this run, saved {final_count} images total, {failed_downloads} failed downloads, {duplicate_skips} duplicate URLs skipped this run.")
+
+
+def run_backfill_colors():
+    metadata = load_metadata()
+    updated = 0
+    for entry in metadata:
+        if "color" in entry:
+            continue
+        path = IMAGES_DIR / entry["filename"]
+        if not path.exists():
+            continue
+        with Image.open(path) as image:
+            entry["color"] = average_color_hex(image.convert("RGB"))
+        updated += 1
+    save_metadata(metadata)
+    print(f"Backfilled color for {updated} of {len(metadata)} entries.")
 
 
 def run_embeddings_and_umap(umap_only=False):
@@ -244,7 +268,20 @@ def main():
             "retune UMAP parameters."
         ),
     )
+    parser.add_argument(
+        "--backfill-colors",
+        action="store_true",
+        help=(
+            "Compute the average color for any existing entries missing "
+            "one, from the already-downloaded local images. No network or "
+            "GPU/CPU-heavy work — just local file reads."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.backfill_colors:
+        run_backfill_colors()
+        return
 
     if args.umap_only:
         run_embeddings_and_umap(umap_only=True)

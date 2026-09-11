@@ -89,7 +89,6 @@
               src={`${import.meta.env.BASE_URL}data/images/${item.filename}`}
               alt=""
               title={item.caption}
-              loading="lazy"
               style={item.color ? `background-color: ${item.color}` : ""}
               onclick={() => (selectedItem = item)}
               onerror={(e) => {

@@ -14,5 +14,9 @@
     "svelte": "^5.56.10",
     "tailwindcss": "^4.3.3",
     "vite": "^8.2.2"
+  },
+  "dependencies": {
+    "d3-selection": "^3.0.0",
+    "d3-zoom": "^3.0.0"
   }
 }

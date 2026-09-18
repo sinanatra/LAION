@@ -1,6 +1,7 @@
 <script>
   import { onMount } from "svelte";
   import DetailPanel from "./lib/DetailPanel.svelte";
+  import MapView from "./lib/MapView.svelte";
   import SearchControls from "./lib/SearchControls.svelte";
   import InfoText from "./lib/InfoText.svelte";
   import {
@@ -9,8 +10,6 @@
     sortItems,
   } from "./lib/filterAndSort.js";
 
-  // laion/relaion2B-en-research-safe row count, via the HF datasets-server
-  // /size endpoint (checked 2026-09).
   const TOTAL_DATASET_SIZE = 2_097_693_557;
 
   let items = $state([]);
@@ -22,6 +21,7 @@
   let blurUnsafe = $state(true);
   let selectedItem = $state(null);
   let highlightedId = $state(null);
+  let viewMode = $state("map");
 
   onMount(async () => {
     try {
@@ -69,6 +69,24 @@
     class="flex items-center text-white justify-between pl-4 uppercase text-xl tracking-wide"
   >
     <p>{percentOfDataset}% of laion-5b</p>
+    <div class="flex text-sm normal-case">
+      <button
+        class="cursor-pointer px-3 {viewMode === 'grid'
+          ? 'underline'
+          : 'opacity-60'}"
+        onclick={() => (viewMode = "grid")}
+      >
+        grid
+      </button>
+      <button
+        class="cursor-pointer px-3 {viewMode === 'map'
+          ? 'underline'
+          : 'opacity-60'}"
+        onclick={() => (viewMode = "map")}
+      >
+        map
+      </button>
+    </div>
   </menu>
 </header>
 
@@ -76,10 +94,13 @@
   class="flex w-full flex-col-reverse md:h-[calc(100vh-30px)] md:flex-row"
 >
   <div
-    class="w-full overflow-y-auto bg-(--background-color) text-(--text-color) md:block md:h-full md:flex-1"
+    class="w-full bg-(--background-color) text-(--text-color) md:h-full md:flex-1 {viewMode ===
+    'grid'
+      ? 'overflow-y-auto md:block'
+      : 'h-[70vh] overflow-hidden md:h-full'}"
   >
-    <div>
-      {#if !loadError}
+    {#if !loadError}
+      {#if viewMode === "grid"}
         <div class="grid grid-cols-[repeat(auto-fill,minmax(30px,1fr))]">
           {#each filtered as item (item.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
@@ -107,8 +128,10 @@
         {#if filtered.length === 0}
           <p>no images match your filters.</p>
         {/if}
+      {:else}
+        <MapView items={filtered} bind:selectedItem {highlightedId} {blurUnsafe} />
       {/if}
-    </div>
+    {/if}
   </div>
 
   <div

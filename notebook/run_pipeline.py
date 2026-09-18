@@ -14,6 +14,7 @@ Usage:
     python run_pipeline.py --skip-embeddings   # download only
     python run_pipeline.py --umap-only         # retune UMAP without re-encoding
     python run_pipeline.py --backfill-colors   # fill in missing avg-color placeholders
+    python run_pipeline.py --build-atlas       # rebuild the map view's sprite atlas
 
 Edit the parameters below to change the sample size, stride, or image
 dimensions.
@@ -21,24 +22,28 @@ dimensions.
 import argparse
 import io
 import json
+import math
 import os
 import subprocess
 import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import requests
 from datasets import load_dataset
 from dotenv import load_dotenv
 from huggingface_hub import login
-from PIL import Image
+from PIL import Image, ImageFilter
 
 # === Parameters ===
 SAMPLE_EVERY_N = 1000
-MAX_TOTAL_IMAGES = 5000
+MAX_TOTAL_IMAGES = 10000
 MAX_IMAGE_DIMENSION = 150
 MAX_ROWS_TO_SCAN = 15_000_000
 SAVE_EVERY = 25
+ATLAS_CELL_SIZE = 64  # px per thumbnail in the map view's sprite atlas
+ATLAS_BLUR_RADIUS = 6  # px, for the pre-blurred "unsafe" atlas copy
 
 DATASET_NAME = "laion/relaion2B-en-research-safe"
 
@@ -47,6 +52,9 @@ IMAGES_DIR = OUTPUT_DIR / "images"
 METADATA_PATH = OUTPUT_DIR / "metadata.json"
 PROGRESS_PATH = OUTPUT_DIR / "progress.json"
 EMBEDDINGS_PATH = OUTPUT_DIR / "embeddings.npy"
+ATLAS_PATH = OUTPUT_DIR / "atlas.jpg"
+ATLAS_BLURRED_PATH = OUTPUT_DIR / "atlas-blurred.jpg"
+ATLAS_META_PATH = OUTPUT_DIR / "atlas-meta.json"
 
 
 def resize_to_fit(image, max_dimension):
@@ -61,6 +69,20 @@ def resize_to_fit(image, max_dimension):
 def average_color_hex(image):
     r, g, b = image.resize((1, 1), Image.LANCZOS).getpixel((0, 0))
     return f"#{r:02x}{g:02x}{b:02x}"
+
+
+VISUAL_GRID = 8  # downsampled to an 8x8 grid of RGB values
+VISUAL_WEIGHT = 1.0  # relative influence vs. the (already unit-norm) CLIP embedding
+
+
+def visual_feature(image):
+    # A coarse spatial color grid: captures rough color AND shape/composition
+    # (since it's still spatially arranged, not just a global average) at low
+    # dimensionality, without needing a separate shape/edge descriptor.
+    small = image.resize((VISUAL_GRID, VISUAL_GRID), Image.LANCZOS)
+    values = np.asarray(small, dtype=np.float32).flatten() / 255.0
+    norm = np.linalg.norm(values)
+    return values / norm if norm > 0 else values
 
 
 def load_metadata():
@@ -186,27 +208,87 @@ def run_backfill_colors():
     print(f"Backfilled color for {updated} of {len(metadata)} entries.")
 
 
+def build_atlas():
+    # Precomputes the map view's whole sprite sheet — every thumbnail laid
+    # out into one big grid image, plus a second copy with unsafe-flagged
+    # ones pre-blurred — so the app fetches two static files total instead
+    # of one request per image, and there's no per-tile loading lag at all
+    # (everything is already local once those two images have loaded).
+    metadata = load_metadata()
+    n = len(metadata)
+    if n == 0:
+        print("No entries in metadata.json — nothing to build an atlas from.")
+        return
+
+    cols = math.ceil(math.sqrt(n))
+    rows = math.ceil(n / cols)
+    atlas_w = cols * ATLAS_CELL_SIZE
+    atlas_h = rows * ATLAS_CELL_SIZE
+    print(f"Building {cols}x{rows} atlas ({atlas_w}x{atlas_h}px) for {n} entries...")
+
+    atlas = Image.new("RGB", (atlas_w, atlas_h), (0, 0, 0))
+    atlas_blurred = Image.new("RGB", (atlas_w, atlas_h), (0, 0, 0))
+
+    start = time.time()
+    missing = 0
+    for i, entry in enumerate(metadata):
+        col = i % cols
+        row = i // cols
+        path = IMAGES_DIR / entry["filename"]
+        if not path.exists():
+            missing += 1
+            entry.pop("atlasCell", None)
+            continue
+        with Image.open(path) as img:
+            thumb = img.convert("RGB").resize(
+                (ATLAS_CELL_SIZE, ATLAS_CELL_SIZE), Image.LANCZOS
+            )
+        atlas.paste(thumb, (col * ATLAS_CELL_SIZE, row * ATLAS_CELL_SIZE))
+        atlas_blurred.paste(
+            thumb.filter(ImageFilter.GaussianBlur(radius=ATLAS_BLUR_RADIUS)),
+            (col * ATLAS_CELL_SIZE, row * ATLAS_CELL_SIZE),
+        )
+        entry["atlasCell"] = i
+
+        if (i + 1) % 500 == 0 or i + 1 == n:
+            elapsed = time.time() - start
+            print(f"  {i + 1:,}/{n:,} thumbnails placed ({elapsed:,.1f}s elapsed)")
+
+    print("Encoding and saving atlas.jpg + atlas-blurred.jpg (this can take a few seconds for a large atlas)...")
+    atlas.save(ATLAS_PATH, "JPEG", quality=85)
+    atlas_blurred.save(ATLAS_BLURRED_PATH, "JPEG", quality=85)
+    with open(ATLAS_META_PATH, "w") as f:
+        json.dump({"cellSize": ATLAS_CELL_SIZE, "cols": cols, "rows": rows}, f)
+    save_metadata(metadata)
+
+    total_elapsed = time.time() - start
+    print(
+        f"Done in {total_elapsed:,.1f}s — {n} entries "
+        f"({missing} missing local images skipped) -> {ATLAS_PATH}"
+    )
+
+
 def run_embeddings_and_umap(umap_only=False):
-    # Imported here, in this dedicated subprocess, so torch is never in the
-    # same process as the streaming download above.
-    import numpy as np
     import umap
 
     metadata = json.loads(METADATA_PATH.read_text())
+    expected_dim = 512 + VISUAL_GRID * VISUAL_GRID * 3
 
     embeddings = None
     if umap_only and EMBEDDINGS_PATH.exists():
         cached = np.load(EMBEDDINGS_PATH)
-        if cached.shape[0] == len(metadata):
+        if cached.shape == (len(metadata), expected_dim):
             embeddings = cached
             print(f"Reusing cached embeddings {embeddings.shape} from {EMBEDDINGS_PATH}")
         else:
             print(
-                f"Cached embeddings ({cached.shape[0]}) don't match metadata "
-                f"({len(metadata)}) — re-encoding."
+                f"Cached embeddings {cached.shape} don't match metadata/features "
+                f"({len(metadata)}, {expected_dim}) — re-encoding."
             )
 
     if embeddings is None:
+        # Imported here, in this dedicated subprocess, so torch is never in
+        # the same process as the streaming download above.
         import open_clip
         import torch
 
@@ -215,18 +297,26 @@ def run_embeddings_and_umap(umap_only=False):
         model, _, preprocess = open_clip.create_model_and_transforms("ViT-B-32", pretrained="openai")
         model.eval()
 
-        embeddings = np.zeros((len(metadata), 512), dtype=np.float32)
+        embeddings = np.zeros((len(metadata), expected_dim), dtype=np.float32)
         batch_size = 32
 
         with torch.no_grad():
             for batch_start in range(0, len(metadata), batch_size):
                 batch = metadata[batch_start : batch_start + batch_size]
-                images = torch.stack(
-                    [preprocess(Image.open(IMAGES_DIR / entry["filename"])) for entry in batch]
+                raw_images = [Image.open(IMAGES_DIR / entry["filename"]) for entry in batch]
+
+                clip_input = torch.stack([preprocess(img) for img in raw_images])
+                clip_embeddings = model.encode_image(clip_input)
+                clip_embeddings = clip_embeddings / clip_embeddings.norm(dim=-1, keepdim=True)
+
+                visual_embeddings = np.stack(
+                    [visual_feature(img.convert("RGB")) for img in raw_images]
                 )
-                batch_embeddings = model.encode_image(images)
-                batch_embeddings = batch_embeddings / batch_embeddings.norm(dim=-1, keepdim=True)
-                embeddings[batch_start : batch_start + len(batch)] = batch_embeddings.numpy()
+
+                embeddings[batch_start : batch_start + len(batch), :512] = clip_embeddings.numpy()
+                embeddings[batch_start : batch_start + len(batch), 512:] = (
+                    VISUAL_WEIGHT * visual_embeddings
+                )
 
                 if batch_start % (batch_size * 10) == 0:
                     print(f"Embedded {batch_start + len(batch)}/{len(metadata)} images...")
@@ -239,9 +329,14 @@ def run_embeddings_and_umap(umap_only=False):
     reducer = umap.UMAP(n_neighbors=30, min_dist=0.1, metric="cosine")
     coords_2d = reducer.fit_transform(embeddings)
 
-    mins = coords_2d.min(axis=0)
-    maxs = coords_2d.max(axis=0)
-    normalized = (coords_2d - mins) / (maxs - mins)
+    # Percentile clipping instead of raw min/max: a handful of outlier points
+    # (visually or semantically unlike everything else) otherwise stretch the
+    # whole [0,1] normalization, squeezing the actual main cluster into a
+    # tiny corner. Outliers still get placed, just clamped to the edge
+    # instead of dictating the entire coordinate range.
+    mins = np.percentile(coords_2d, 2, axis=0)
+    maxs = np.percentile(coords_2d, 98, axis=0)
+    normalized = np.clip((coords_2d - mins) / (maxs - mins), 0, 1)
 
     for entry, (x, y) in zip(metadata, normalized):
         entry["x"] = float(x)
@@ -277,10 +372,25 @@ def main():
             "GPU/CPU-heavy work — just local file reads."
         ),
     )
+    parser.add_argument(
+        "--build-atlas",
+        action="store_true",
+        help=(
+            "Rebuild the map view's sprite atlas (atlas.jpg, "
+            "atlas-blurred.jpg, atlas-meta.json) from the already-downloaded "
+            "local images. Local-only — no network. Rerun this after adding "
+            "images or the map view will fall back to color placeholders "
+            "for anything newer than the last atlas build."
+        ),
+    )
     args = parser.parse_args()
 
     if args.backfill_colors:
         run_backfill_colors()
+        return
+
+    if args.build_atlas:
+        build_atlas()
         return
 
     if args.umap_only:

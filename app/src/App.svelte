@@ -22,16 +22,35 @@
   let selectedItem = $state(null);
   let highlightedId = $state(null);
   let viewMode = $state("map");
+  let atlasMeta = $state(null);
 
   onMount(async () => {
+    const base = import.meta.env.BASE_URL;
     try {
-      const res = await fetch(`${import.meta.env.BASE_URL}data/metadata.json`);
+      const res = await fetch(`${base}data/metadata.json`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       items = await res.json();
     } catch (err) {
       loadError = err.message;
+      return;
     }
+    try {
+      const res = await fetch(`${base}data/atlas-meta.json`);
+      if (res.ok) atlasMeta = await res.json();
+    } catch {}
   });
+
+  function tileStyle(item) {
+    if (!atlasMeta || item.atlasCell === undefined) {
+      return item.color ? `background-color: ${item.color}` : "";
+    }
+    const { cols, rows } = atlasMeta;
+    const col = item.atlasCell % cols;
+    const row = Math.floor(item.atlasCell / cols);
+    const posX = cols > 1 ? (col / (cols - 1)) * 100 : 0;
+    const posY = rows > 1 ? (row / (rows - 1)) * 100 : 0;
+    return `background-image: url(${import.meta.env.BASE_URL}data/atlas.jpg); background-size: ${cols * 100}% ${rows * 100}%; background-position: ${posX}% ${posY}%;`;
+  }
 
   let percentOfDataset = $derived.by(() => {
     if (items.length === 0) return "0";
@@ -105,31 +124,31 @@
           {#each filtered as item (item.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-            <img
+            <!-- svelte-ignore a11y_no_static_element_interactions -->
+            <div
               id={`item-${item.id}`}
-              src={`${import.meta.env.BASE_URL}data/images/${item.filename}`}
-              alt=""
               title={item.caption}
-              style={item.color ? `background-color: ${item.color}` : ""}
+              style={tileStyle(item)}
               onclick={() => (selectedItem = item)}
-              onerror={(e) => {
-                if (e.currentTarget instanceof HTMLElement)
-                  e.currentTarget.style.display = "none";
-              }}
-              class="aspect-square w-full cursor-pointer object-cover {highlightedId ===
+              class="aspect-square w-full cursor-pointer bg-no-repeat {highlightedId ===
               item.id
                 ? 'outline-2 outline-(--text-color)'
                 : ''} {blurUnsafe && isFlaggedUnsafe(item)
                 ? 'blur-sm hover:blur-none'
                 : ''}"
-            />
+            ></div>
           {/each}
         </div>
         {#if filtered.length === 0}
           <p>no images match your filters.</p>
         {/if}
       {:else}
-        <MapView items={filtered} bind:selectedItem {highlightedId} {blurUnsafe} />
+        <MapView
+          items={filtered}
+          bind:selectedItem
+          {highlightedId}
+          {blurUnsafe}
+        />
       {/if}
     {/if}
   </div>

@@ -21,7 +21,8 @@
   let blurUnsafe = $state(true);
   let selectedItem = $state(null);
   let highlightedId = $state(null);
-  let viewMode = $state("map");
+  let viewMode = $state("grid");
+  let gridTileSize = $state(30);
   let atlasMeta = $state(null);
 
   onMount(async () => {
@@ -88,7 +89,20 @@
     class="flex items-center text-white justify-between pl-4 uppercase text-xl tracking-wide"
   >
     <p>{percentOfDataset}% of laion-5b</p>
-    <div class="flex text-sm normal-case">
+    <div class="flex items-center text-sm normal-case">
+      {#if viewMode === "grid"}
+        <label class="flex items-center gap-2 px-3">
+          size
+          <input
+            type="range"
+            min="10"
+            max="200"
+            step="1"
+            bind:value={gridTileSize}
+            class="cursor-pointer"
+          />
+        </label>
+      {/if}
       <button
         class="cursor-pointer px-3 {viewMode === 'grid'
           ? 'underline'
@@ -120,7 +134,10 @@
   >
     {#if !loadError}
       {#if viewMode === "grid"}
-        <div class="grid grid-cols-[repeat(auto-fill,minmax(30px,1fr))]">
+        <div
+          class="grid"
+          style="grid-template-columns: repeat(auto-fill, minmax({gridTileSize}px, 1fr))"
+        >
           {#each filtered as item (item.id)}
             <!-- svelte-ignore a11y_click_events_have_key_events -->
             <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
